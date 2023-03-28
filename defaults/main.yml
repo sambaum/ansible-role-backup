@@ -3,6 +3,7 @@
 backup_cron_job_state: present
 backup_hour: "3"
 backup_minute: "00"
+backup_day: "*"
 
 # User under which backup jobs will run.
 backup_user: "{{ ansible_env.SUDO_USER | default(ansible_env.USER, true) | default(ansible_user_id, true) }}"
@@ -21,7 +22,12 @@ backup_exclude_items:
   - cache
   - tmp
 
+# Archiver
+backup_archiver: tar
+
+# Uptimekuma
 backup_uptimekuma_protocol: https
+backup_uptimekuma_port: 443
 backup_uptimekuma_host: example.com
 backup_uptimekuma_push_id:
 backup_uptimekuma_min_file_size: 0

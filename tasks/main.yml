@@ -28,6 +28,7 @@
     name: "Backup cron job"
     minute: "{{ backup_minute }}"
     hour: "{{ backup_hour }}"
+    day:  "{{ backup_day }}"
     user: "{{ backup_user }}"
     job: "{{ backup_path }}/backup.sh"
     state: "{{ backup_cron_job_state }}"

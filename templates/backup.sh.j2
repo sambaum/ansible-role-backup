@@ -7,15 +7,31 @@ TAR=/usr/bin/tar
 RM=/usr/bin/rm
 MKDIR=/usr/bin/mkdir
 CURL=/usr/bin/curl
+ZIP=/usr/bin/zip
 
 # Delete existing tar file
-$RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}-*
+$RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}*
 
 # Create Backup Sub-Folder
 $MKDIR -p {{ backup_target_path }}/{{ backup_identifier }}
 
 # Backup
-ERROR=$($TAR --exclude-from='{{ backup_path }}/backup-exclude.txt' -cf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %} {{ directory }} {% endfor %}  2>&1 > /dev/null)
+
+{% if backup_archiver=="zip" -%}
+ERROR=$($ZIP \
+ --symlinks \
+ --recurse-paths \
+ --split-size 100m \
+ {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+  2>&1 > /dev/null)
+{% else -%}
+ERROR=$($TAR \
+  --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+  -cf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %}  \
+  2>&1 > /dev/null)
+{% endif %}
+
+
 
 {% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
 # Uptime-Kuma
@@ -26,7 +42,7 @@ if [ $? -eq 0 ]; then
     --data-urlencode "status=up" \
     --data-urlencode "msg=OK" \
     --data-urlencode "ping=" \
-    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}/api/push/{{ backup_uptimekuma_push_id }}
+    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 else
     $CURL --get \
     --output /dev/null \
@@ -34,10 +50,14 @@ else
     --data-urlencode "status=down" \
     --data-urlencode "msg=Failed with error: $ERROR" \
     --data-urlencode "ping=" \
-    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}/api/push/{{ backup_uptimekuma_push_id }}
+    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 fi
 
+{% if backup_archiver=="zip" -%}
+FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip)
+{% else -%}
 FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz)
+{% endif %}
 
 if [ $FILESIZE -lt {{ backup_uptimekuma_min_file_size }} ]; then
     $CURL --get \
@@ -46,7 +66,7 @@ if [ $FILESIZE -lt {{ backup_uptimekuma_min_file_size }} ]; then
     --data-urlencode "status=up" \
     --data-urlencode "msg=File size OK" \
     --data-urlencode "ping=" \
-    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}/api/push/{{ backup_uptimekuma_push_id }}
+    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 fi
 {% else %}
 # Uptime-Kuma alerting disabled
