@@ -31,7 +31,7 @@ ERROR=$($TAR \
   2>&1 > /dev/null)
 {% endif %}
 
-
+echo $ERROR
 
 {% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
 # Uptime-Kuma
