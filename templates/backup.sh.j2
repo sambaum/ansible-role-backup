@@ -12,107 +12,99 @@ ZIP=/usr/bin/zip
 # Delete existing tar file
 $RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}*
 
-# Create Backup Sub-Folder
+# Create backup sub-folder
 $MKDIR -p {{ backup_target_path }}/{{ backup_identifier }}
 
 # Backup
-
 {% if backup_archiver=="zip" -%}
 ERROR=$($ZIP \
- --symlinks \
- --recurse-paths \
- --split-size 100m \
- {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-  2>&1 > /dev/null)
+    --symlinks \
+    --recurse-paths \
+    --split-size 100m \
+    {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+    2>&1 >/dev/null)
 {% else -%}
 ERROR=$($TAR \
-  --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-  -cf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %}  \
-  2>&1 > /dev/null)
+    --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+    -cf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+    2>&1 >/dev/null)
 {% endif %}
 BACKUP_RETURN_CODE=$?
 
-# echo $ERROR
-
-{% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
-# Uptime-Kuma
-if [ $BACKUP_RETURN_CODE -eq 0 ]; then
-    $CURL --get \
-    --output /dev/null \
-    --silent \
-    --data-urlencode "status=up" \
-    --data-urlencode "msg=OK" \
-    --data-urlencode "ping=" \
-    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
-else
-    $CURL --get \
-    --output /dev/null \
-    --silent \
-    --data-urlencode "status=down" \
-    --data-urlencode "msg=Failed with error: $ERROR" \
-    --data-urlencode "ping=" \
-    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
-fi
-
+# Check file size
 {% if backup_archiver=="zip" -%}
 FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip)
 {% else -%}
 FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz)
 {% endif %}
 
+{% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
+# Uptime-Kuma alerting
+if [ $BACKUP_RETURN_CODE -eq 0 ]; then
+    $CURL --get \
+        --output /dev/null \
+        --silent \
+        --data-urlencode "status=up" \
+        --data-urlencode "msg=OK" \
+        --data-urlencode "ping=" \
+        {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
+else
+    $CURL --get \
+        --output /dev/null \
+        --silent \
+        --data-urlencode "status=down" \
+        --data-urlencode "msg=Failed with error: $ERROR" \
+        --data-urlencode "ping=" \
+        {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
+fi
+
 if [ $FILESIZE -lt {{ backup_uptimekuma_min_file_size }} ]; then
     $CURL --get \
-    --output /dev/null \
-    --silent \
-    --data-urlencode "status=up" \
-    --data-urlencode "msg=File size OK" \
-    --data-urlencode "ping=" \
-    {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
+        --output /dev/null \
+        --silent \
+        --data-urlencode "status=up" \
+        --data-urlencode "msg=File size OK" \
+        --data-urlencode "ping=" \
+        {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 fi
 {% else %}
 # Uptime-Kuma alerting disabled
 {% endif %}
 
-
 {% if backup_healthchecks_push_id is defined and backup_healthchecks_push_id and backup_healthchecks_push_id!="" %}
-# Healthchecks
-if [ $BACKUP_RETURN_CODE -eq 0 ]; then
-    $CURL --get \
-    --output /dev/null \
-    --silent \
-    --retry 5 \
-    --max-time 10 \
-    --fail \
-    --show-error \
-    {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}
+# Healthchecks alerting
+if [ $BACKUP_RETURN_CODE -ne 0 ]; then
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "$ERROR" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/$BACKUP_RETURN_CODE
+elif [ $FILESIZE -lt {{ backup_healthchecks_min_file_size }} ]; then
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "File size was $FILESIZE, but should be larger than {{ backup_healthchecks_min_file_size }}" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
 else
     $CURL \
-    --output /dev/null \
-    --silent \
-    --retry 5 \
-    --max-time 10 \
-    --fail \
-    --show-error \
-    --data-raw "$ERROR" \
-    {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/$BACKUP_RETURN_CODE
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "OK: File size was $FILESIZE, which is larger than {{ backup_healthchecks_min_file_size }}" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}
 fi
 
-{% if backup_archiver=="zip" -%}
-FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip)
-{% else -%}
-FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz)
-{% endif %}
-
-if [ $FILESIZE -lt {{ backup_healthchecks_min_file_size }} ]; then
-    $CURL \
-    --output /dev/null \
-    --silent \
-    --retry 5 \
-    --max-time 10 \
-    --fail \
-    --data-raw "Size was $FILESIZE but should be larger than {{ backup_healthchecks_min_file_size }}" \
-    {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
-fi
 {% else %}
 # Healthchecks alerting disabled
 {% endif %}
