@@ -31,3 +31,10 @@ backup_uptimekuma_port: 443
 backup_uptimekuma_host: example.com
 backup_uptimekuma_push_id:
 backup_uptimekuma_min_file_size: 0
+
+# Healthchecks
+backup_healthchecks_protocol: https
+backup_healthchecks_port: 443
+backup_healthchecks_host: example.com
+backup_healthchecks_push_id:
+backup_healthchecks_min_file_size: 0
