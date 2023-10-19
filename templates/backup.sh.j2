@@ -26,7 +26,7 @@ ERROR=$($ZIP \
 {% else -%}
 ERROR=$($TAR \
     --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-    -cf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+    -czf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
     2>&1 >/dev/null)
 {% endif %}
 BACKUP_RETURN_CODE=$?
@@ -91,7 +91,17 @@ elif [ $FILESIZE -lt {{ backup_healthchecks_min_file_size }} ]; then
         --max-time 10 \
         --fail \
         --show-error \
-        --data-raw "File size was $FILESIZE, but should be larger than {{ backup_healthchecks_min_file_size }}" \
+        --data-raw "File size too smll ($FILESIZE), should be larger than {{ backup_healthchecks_min_file_size }}" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
+elif [ $FILESIZE -gt {{ backup_healthchecks_max_file_size }} ]; then
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "File size too large ($FILESIZE), it should be smaller than {{ backup_healthchecks_max_file_size }}" \
         {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
 else
     $CURL \
@@ -101,7 +111,7 @@ else
         --max-time 10 \
         --fail \
         --show-error \
-        --data-raw "OK: File size was $FILESIZE, which is larger than {{ backup_healthchecks_min_file_size }}" \
+        --data-raw "OK: File size $FILESIZE was between {{ backup_healthchecks_min_file_size }} and {{ backup_healthchecks_max_file_size }}" \
         {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}
 fi
 
