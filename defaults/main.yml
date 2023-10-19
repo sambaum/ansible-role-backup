@@ -1,4 +1,3 @@
----
 # Backup cron job options.
 backup_cron_job_state: present
 backup_hour: "3"
@@ -13,14 +12,15 @@ backup_path: /home/{{ backup_user }}/backups
 
 # Directories to back up. {{ backup_user }} must have read access to these dirs.
 backup_directories:
-  - /home/{{ backup_user }}/domains
-  - /home/{{ backup_user }}/repositories
+- /home/{{ backup_user }}/domains
+- /home/{{ backup_user }}/repositories
 
 # Items to exclude from backups. (Use rsync 'excludes' file syntax.)
 backup_exclude_items:
-  - .DS_Store
-  - cache
-  - tmp
+- .DS_Store
+- cache
+- .cache
+- tmp
 
 # Archiver
 backup_archiver: tar
