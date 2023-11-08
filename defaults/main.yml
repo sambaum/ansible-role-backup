@@ -25,6 +25,9 @@ backup_exclude_items:
 # Archiver
 backup_archiver: tar
 
+# Try x times (if backup fails)
+backup_try_max: 2
+
 # Uptimekuma
 backup_uptimekuma_protocol: https
 backup_uptimekuma_port: 443

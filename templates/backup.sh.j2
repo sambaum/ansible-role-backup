@@ -8,6 +8,8 @@ RM=/usr/bin/rm
 MKDIR=/usr/bin/mkdir
 CURL=/usr/bin/curl
 ZIP=/usr/bin/zip
+RETRY_COUNT=1
+TRY_MAX={{ backup_try_max }}
 
 # Delete existing tar file
 $RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}*
@@ -16,20 +18,30 @@ $RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identif
 $MKDIR -p {{ backup_target_path }}/{{ backup_identifier }}
 
 # Backup
-{% if backup_archiver=="zip" -%}
-ERROR=$($ZIP \
-    --symlinks \
-    --recurse-paths \
-    --split-size 100m \
-    {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-    2>&1 >/dev/null)
-{% else -%}
-ERROR=$($TAR \
-    --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-    -czf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-    2>&1 >/dev/null)
-{% endif %}
-BACKUP_RETURN_CODE=$?
+while [ $RETRY_COUNT -le $TRY_MAX ]; do
+    echo "Starting backup for {{ backup_identifier }}"
+    {% if backup_archiver=="zip" -%}
+    ERROR=$($ZIP \
+        --symlinks \
+        --recurse-paths \
+        --split-size 100m \
+        {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+        2>&1 >/dev/null)
+    {% else -%}
+    ERROR=$($TAR \
+        --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+        -czf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+        2>&1 >/dev/null)
+    {% endif %}
+    BACKUP_RETURN_CODE=$?
+    if [ $BACKUP_RETURN_CODE -ne 0 ]; then
+        echo "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+    else
+        RETRY_COUNT=100
+        echo "Backup successful"
+    fi
+done
 
 # Check file size
 {% if backup_archiver=="zip" -%}
@@ -40,6 +52,7 @@ FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/b
 
 {% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
 # Uptime-Kuma alerting
+echo "Sending result to Uptime-Kuma"
 if [ $BACKUP_RETURN_CODE -eq 0 ]; then
     $CURL --get \
         --output /dev/null \
@@ -73,6 +86,7 @@ fi
 
 {% if backup_healthchecks_push_id is defined and backup_healthchecks_push_id and backup_healthchecks_push_id!="" %}
 # Healthchecks alerting
+echo "Sending result to Healthchecks"
 if [ $BACKUP_RETURN_CODE -ne 0 ]; then
     $CURL \
         --output /dev/null \
