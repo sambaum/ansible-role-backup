@@ -1,0 +1,80 @@
+#!/bin/bash
+#
+# {{ ansible_managed }}
+#
+
+MKDIR=/usr/bin/mkdir
+CURL=/usr/bin/curl
+SCP=/usr/bin/scp
+
+{% if backup_remote_fetch %}
+
+{% for backup_remote_fetch_target in backup_remote_fetch_targets %}
+
+echo
+echo "Starting remote backup fetch for {{ backup_remote_fetch_target }}"
+
+$MKDIR -p {{ backup_remote_fetch_local_destination_directory }}/{{ backup_remote_fetch_identifier }}
+ERROR=$($SCP \
+    {{ backup_remote_fetch_target }}:{{ backup_remote_fetch_target_base_directory }}/{{ backup_remote_fetch_target }}/backup-{{ backup_remote_fetch_identifier }}.tar.gz {{ backup_remote_fetch_local_destination_directory }}/{{ backup_remote_fetch_identifier }}/ \
+    2>&1 >/dev/null)
+
+BACKUP_REMOTE_FETCH=$?
+if [ $BACKUP_REMOTE_FETCH -ne 0 ]; then
+    echo "Remote Fetch has failed"
+    # TODO: Healthchecks, file-size
+else
+    echo "Remote Fetch successful"
+fi
+
+# Check file size
+FILESIZE=$(stat --printf="%s" {{ backup_remote_fetch_local_destination_directory }}/{{ backup_remote_fetch_identifier }}/backup-{{ backup_remote_fetch_identifier }}.tar.gz)
+
+# Healthchecks alerting
+echo "Sending result to Healthchecks"
+if [ $BACKUP_REMOTE_FETCH -ne 0 ]; then
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "$ERROR" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_remote_fetch_backup_healthchecks_push_id }}/$BACKUP_REMOTE_FETCH
+elif [ $FILESIZE -lt {{ backup_remote_fetch_backup_healthchecks_min_file_size }} ]; then
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "File size too smll ($FILESIZE), should be larger than {{ backup_remote_fetch_backup_healthchecks_min_file_size }}" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_remote_fetch_backup_healthchecks_push_id }}/fail
+elif [ $FILESIZE -gt {{ backup_remote_fetch_backup_healthchecks_max_file_size }} ]; then
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "File size too large ($FILESIZE), it should be smaller than {{ backup_remote_fetch_backup_healthchecks_max_file_size }}" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_remote_fetch_backup_healthchecks_push_id }}/fail
+else
+    $CURL \
+        --output /dev/null \
+        --silent \
+        --retry 5 \
+        --max-time 10 \
+        --fail \
+        --show-error \
+        --data-raw "OK: File size $FILESIZE was between {{ backup_remote_fetch_backup_healthchecks_min_file_size }} and {{ backup_remote_fetch_backup_healthchecks_max_file_size }}" \
+        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_remote_fetch_backup_healthchecks_push_id }}
+fi
+
+{% endfor %}
+
+{% endif %}
+

@@ -1,3 +1,7 @@
+# Basic Settings
+backup_identifier: "{{ inventory_hostname }}"
+backup_target_path: /mnt/nas1/backups
+
 # Backup cron job options.
 backup_cron_job_state: present
 backup_hour: "3"
@@ -39,6 +43,22 @@ backup_uptimekuma_min_file_size: 0
 backup_healthchecks_protocol: https
 backup_healthchecks_port: 443
 backup_healthchecks_host: example.com
-backup_healthchecks_push_id:
+backup_healthchecks_push_id: pushidpushidpushidpushidpushidpushid
 backup_healthchecks_min_file_size: 0
 backup_healthchecks_max_file_size: 0
+
+# Remote backup fetch (TODO: make it possible for multiple hosts)
+backup_remote_fetch: false
+backup_remote_fetch_targets: []
+backup_remote_fetch_target_base_directory: /backup
+backup_remote_fetch_local_destination_directory: /mnt/nas1/backups
+backup_remote_fetch_local_sshfs_mountpoint: /mnt/server1
+backup_remote_fetch_identifier: host.example.com
+backup_remote_fetch_backup_healthchecks_min_file_size: 100
+backup_remote_fetch_backup_healthchecks_max_file_size: 1000
+backup_remote_fetch_backup_healthchecks_push_id: pushidpushidpushidpushidpushidpushid
+
+backup_remote_fetch_backup_cron_job_state: present
+backup_remote_fetch_backup_hour: "7"
+backup_remote_fetch_backup_minute: "00"
+backup_remote_fetch_backup_day: "*"

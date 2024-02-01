@@ -31,3 +31,7 @@
     user: "{{ backup_user }}"
     job: "{{ backup_path }}/backup.sh"
     state: "{{ backup_cron_job_state }}"
+
+- name: Include Remote Backup Fetch
+  ansible.builtin.include_tasks: backup-remote-fetch.yml
+  when: backup_remote_fetch

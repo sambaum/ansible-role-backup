@@ -10,6 +10,7 @@ CURL=/usr/bin/curl
 ZIP=/usr/bin/zip
 RETRY_COUNT=1
 TRY_MAX={{ backup_try_max }}
+SCP=/usr/bin/scp
 
 # Delete existing tar file
 $RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}*
@@ -20,19 +21,23 @@ $MKDIR -p {{ backup_target_path }}/{{ backup_identifier }}
 # Backup
 while [ $RETRY_COUNT -le $TRY_MAX ]; do
     echo "Starting backup for {{ backup_identifier }}"
+
     {% if backup_archiver=="zip" -%}
+    # Backup with ZIP
     ERROR=$($ZIP \
         --symlinks \
         --recurse-paths \
         --split-size 100m \
         {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
         2>&1 >/dev/null)
+    #Backup with TAR
     {% else -%}
     ERROR=$($TAR \
         --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-        -czf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+        -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
         2>&1 >/dev/null)
     {% endif %}
+
     BACKUP_RETURN_CODE=$?
     if [ $BACKUP_RETURN_CODE -ne 0 ]; then
         echo "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
@@ -132,3 +137,5 @@ fi
 {% else %}
 # Healthchecks alerting disabled
 {% endif %}
+
+
