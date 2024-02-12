@@ -40,7 +40,7 @@ backup_uptimekuma_min_file_size: 0
 backup_healthchecks_protocol: https
 backup_healthchecks_port: 443
 backup_healthchecks_host: example.com
-backup_healthchecks_push_id: pushidpushidpushidpushidpushidpushid
+backup_healthchecks_push_id:
 backup_healthchecks_min_file_size: 0
 backup_healthchecks_max_file_size: 0
 
@@ -53,7 +53,7 @@ backup_remote_fetch_local_sshfs_mountpoint: /mnt/server1
 backup_remote_fetch_identifier: host.example.com
 backup_remote_fetch_backup_healthchecks_min_file_size: 100
 backup_remote_fetch_backup_healthchecks_max_file_size: 1000
-backup_remote_fetch_backup_healthchecks_push_id: pushidpushidpushidpushidpushidpushid
+backup_remote_fetch_backup_healthchecks_push_id:
 
 backup_remote_fetch_backup_cron_job_state: present
 backup_remote_fetch_backup_hour: "7"
