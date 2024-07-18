@@ -55,6 +55,9 @@ FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/b
 FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz)
 {% endif %}
 
+# customize error message
+ERROR="Backup failed after $RETRY_COUNT tries. Error of the last try: \n\n $ERROR"
+
 {% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
 # Uptime-Kuma alerting
 echo "Sending result to Uptime-Kuma"
