@@ -40,6 +40,7 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
 
     BACKUP_RETURN_CODE=$?
     if [ $BACKUP_RETURN_CODE -ne 0 ]; then
+        echo $ERROR
         echo "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
         RETRY_COUNT=$((RETRY_COUNT + 1))
     else
