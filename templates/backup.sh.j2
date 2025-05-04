@@ -42,10 +42,17 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
     if [ $BACKUP_RETURN_CODE -ne 0 ]; then
         echo $ERROR
         echo "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
+
+        # Apply increasing delay before next retry
+    case $RETRY_COUNT in
+        2) echo "Backup faile 30 minutes..."; sleep 1800 ;;
+        3) echo "Backup faile 90 minutes..."; sleep 5400 ;;
+    esac
+
         RETRY_COUNT=$((RETRY_COUNT + 1))
     else
-        RETRY_COUNT=100
         echo "Backup successful"
+        break
     fi
 done
 
