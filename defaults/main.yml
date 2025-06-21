@@ -59,3 +59,10 @@ backup_remote_fetch_backup_cron_job_state: present
 backup_remote_fetch_backup_hour: "7"
 backup_remote_fetch_backup_minute: "00"
 backup_remote_fetch_backup_day: "*"
+
+# LVM Snapshot
+backup_lvm_snapshot: "false"
+backup_lvm_snapshot_volume: /dev/ubuntu-vg/ubuntu-lv
+backup_lvm_snapshot_name: backup-snapshot
+backup_lvm_snapshot_size: 4G
+backup_lvm_snapshot_mount_point: /mnt/lvm-backup-snapshot

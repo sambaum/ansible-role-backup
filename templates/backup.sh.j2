@@ -22,7 +22,7 @@ $MKDIR -p {{ backup_target_path }}/{{ backup_identifier }}
 while [ $RETRY_COUNT -le $TRY_MAX ]; do
     echo "Starting backup for {{ backup_identifier }}"
 
-    {% if backup_archiver=="zip" -%}
+    {% if backup_archiver=="zip" %}
     # Backup with ZIP
     ERROR=$($ZIP \
         --symlinks \
@@ -31,11 +31,28 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
         {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
         2>&1 >/dev/null)
     #Backup with TAR
-    {% else -%}
-    ERROR=$($TAR \
-        --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-        -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-        2>&1 >/dev/null)
+    {% else %}
+        {% if backup_lvm_snapshot=="true" %}
+            echo "Creating LVM snapshot for backup..."
+            lvcreate --size {{ backup_lvm_snapshot_size }} --snapshot --name {{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_volume }}
+            mkdir -p {{ backup_lvm_snapshot_mount_point }}
+            echo "Mounting LVM snapshot..."
+            mount /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_mount_point }}
+            echo "Creating archive from LVM snapshot..."
+            ERROR=$($TAR \
+            --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+            -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz -C {{ backup_lvm_snapshot_mount_point }} {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+            2>&1 >/dev/null)
+            echo "Unmounting LVM snapshot..."
+            umount {{ backup_lvm_snapshot_mount_point }}
+            echo "Removing LVM snapshot..."
+            lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
+        {% else %}
+            ERROR=$($TAR \
+            --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+            -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+            2>&1 >/dev/null)
+        {% endif %}
     {% endif %}
 
     BACKUP_RETURN_CODE=$?
