@@ -47,13 +47,13 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
         2>&1 >/dev/null)
     #Backup with TAR
     {% else %}
-        {% if backup_lvm_snapshot=="true" %}
+    {% if backup_lvm_snapshot=="true" %}
 
     echo "Looking for tar processes with snapshot path in their command line..."
     pids=$(pgrep tar)
     found=0
     for pid in $pids; do
-        cmdline=$(tr '\0' ' ' < /proc/$pid/cmdline)
+        cmdline=$(tr '\0' ' ' </proc/$pid/cmdline)
         if echo "$cmdline" | grep -q '{{ backup_lvm_snapshot_mount_point }}'; then
             echo "Process $pid (TAR) is still running in the background, manual intervention required."
             found=1
@@ -67,31 +67,41 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
     fi
 
     echo "Checking if snapshot already exists..."
-    if lvdisplay /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} &> /dev/null; then
+    if lvdisplay /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} &>/dev/null; then
         echo "Existing snapshot found. Attempting to unmount (if mounted)..."
         umount {{ backup_lvm_snapshot_mount_point }} &>/dev/null || echo "Not mounted or unmount failed (may be ok if not mounted)."
 
         echo "Removing existing snapshot..."
-        lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} || { echo "Failed to remove existing snapshot. Aborting."; exit 1; }
+        lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} || {
+            echo "Failed to remove existing snapshot. Aborting."
+            exit 1
+        }
     fi
 
-            echo "Creating LVM snapshot for backup..."
-            lvcreate --size {{ backup_lvm_snapshot_size }} --snapshot --name {{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_volume }} || { echo "Snapshot creation failed."; exit 1; }
-            mkdir -p {{ backup_lvm_snapshot_mount_point }}
-            echo "Mounting LVM snapshot..."
-            mount /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_mount_point }} || { echo "Mount failed."; lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}; exit 1; }
-            trap cleanup EXIT
-            echo "Creating archive from LVM snapshot..."
-            ERROR=$($TAR \
-            --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-            -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz -C {{ backup_lvm_snapshot_mount_point }} {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-            2>&1 >/dev/null)
-        {% else %}
-            ERROR=$($TAR \
-            --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-            -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-            2>&1 >/dev/null)
-        {% endif %}
+    echo "Creating LVM snapshot for backup..."
+    lvcreate --size {{ backup_lvm_snapshot_size }} --snapshot --name {{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_volume }} || {
+        echo "Snapshot creation failed."
+        exit 1
+    }
+    mkdir -p {{ backup_lvm_snapshot_mount_point }}
+    echo "Mounting LVM snapshot..."
+    mount /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_mount_point }} || {
+        echo "Mount failed."
+        lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
+        exit 1
+    }
+    trap cleanup EXIT
+    echo "Creating archive from LVM snapshot..."
+    ERROR=$($TAR \
+        --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+        -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz -C {{ backup_lvm_snapshot_mount_point }} {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+        2>&1 >/dev/null)
+    {% else %}
+    ERROR=$($TAR \
+        --exclude-from='{{ backup_path }}/backup-exclude.txt' \
+        -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+        2>&1 >/dev/null)
+    {% endif %}
     {% endif %}
 
     BACKUP_RETURN_CODE=$?
@@ -100,10 +110,16 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
         echo "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
 
         # Apply increasing delay before next retry
-    case $RETRY_COUNT in
-        2) echo "Backup failed 30 minutes..."; sleep 1800 ;;
-        3) echo "Backup failed 90 minutes..."; sleep 5400 ;;
-    esac
+        case $RETRY_COUNT in
+        2)
+            echo "Backup failed 30 minutes..."
+            sleep 1800
+            ;;
+        3)
+            echo "Backup failed 90 minutes..."
+            sleep 5400
+            ;;
+        esac
 
         RETRY_COUNT=$((RETRY_COUNT + 1))
     else
@@ -204,5 +220,3 @@ fi
 {% else %}
 # Healthchecks alerting disabled
 {% endif %}
-
-
