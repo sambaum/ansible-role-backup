@@ -4,7 +4,7 @@
     state: directory
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 0775
+    mode: 775
 
 - name: Copy backup script to server.
   template:
@@ -12,7 +12,7 @@
     dest: "{{ backup_path }}/backup.sh"
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 0744
+    mode: 744
 
 - name: Copy excludes file to server.
   template:
@@ -20,13 +20,13 @@
     dest: "{{ backup_path }}/backup-exclude.txt"
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 0644
+    mode: 644
 
 - name: Configure backup cron job.
   cron:
     name: "Backup cron job"
-    minute: "{{ backup_minute }}"
-    hour: "{{ backup_hour }}"
+    minute: "{{ inventory_hostname | hash('sha1') | int(base=16) % 60 }}"
+    hour: "{{ 3 + (inventory_hostname | hash('sha1') | int(base=16) % 3) }}"
     day: "{{ backup_day }}"
     user: "{{ backup_user }}"
     job: "{{ backup_path }}/backup.sh"

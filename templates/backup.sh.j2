@@ -11,6 +11,21 @@ ZIP=/usr/bin/zip
 RETRY_COUNT=1
 TRY_MAX={{ backup_try_max }}
 SCP=/usr/bin/scp
+LOGGER=/usr/bin/logger
+LOG_TAG="backup-script"
+
+log() {
+	local level="$1"
+	shift
+	local message="$*"
+
+	local ts pid
+	ts=$(date +"%Y-%m-%d %H:%M:%S")
+	pid=$$
+
+	echo "$ts [$pid] [$level] {{ backup_identifier }}: $message"
+	$LOGGER -t "$LOG_TAG" -p "user.$level" "[$pid] {{ backup_identifier }}: $message"
+}
 
 # Delete existing tar file
 $RM -f {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}*
@@ -20,112 +35,112 @@ $MKDIR -p {{ backup_target_path }}/{{ backup_identifier }}
 
 # Functions
 cleanup() {
-    echo "Running cleanup..."
+	log info "Running cleanup..."
 
-    if mountpoint -q {{ backup_lvm_snapshot_mount_point }}; then
-        echo "Unmounting LVM snapshot..."
-        umount {{ backup_lvm_snapshot_mount_point }}
-    fi
+	if mountpoint -q {{ backup_lvm_snapshot_mount_point }}; then
+		log info "Unmounting LVM snapshot..."
+		umount {{ backup_lvm_snapshot_mount_point }}
+	fi
 
-    if lvdisplay /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} &>/dev/null; then
-        echo "Removing LVM snapshot..."
-        lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
-    fi
+	if lvdisplay /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} &>/dev/null; then
+		log info "Removing LVM snapshot..."
+		lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
+	fi
 }
 
 # Backup
 while [ $RETRY_COUNT -le $TRY_MAX ]; do
-    echo "Starting backup for {{ backup_identifier }}"
+	log info "Starting backup for {{ backup_identifier }}"
 
-    {% if backup_archiver=="zip" %}
-    # Backup with ZIP
-    ERROR=$($ZIP \
-        --symlinks \
-        --recurse-paths \
-        --split-size 100m \
-        {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-        2>&1 >/dev/null)
-    #Backup with TAR
-    {% else %}
-    {% if backup_lvm_snapshot=="true" %}
+	{% if backup_archiver=="zip" %}
+	# Backup with ZIP
+	ERROR=$($ZIP \
+		--symlinks \
+		--recurse-paths \
+		--split-size 100m \
+		{{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+		2>&1 >/dev/null)
+	#Backup with TAR
+	{% else %}
+	{% if backup_lvm_snapshot=="true" %}
 
-    echo "Looking for tar processes with snapshot path in their command line..."
-    pids=$(pgrep tar)
-    found=0
-    for pid in $pids; do
-        cmdline=$(tr '\0' ' ' </proc/$pid/cmdline)
-        if echo "$cmdline" | grep -q '{{ backup_lvm_snapshot_mount_point }}'; then
-            echo "Process $pid (TAR) is still running in the background, manual intervention required."
-            found=1
-            break
-        fi
-    done
-    if [ "$found" -eq 1 ]; then
-        exit 1
-    else
-        echo "No process found, continuing with backup..."
-    fi
+	log info "Looking for tar processes with snapshot path in their command line..."
+	pids=$(pgrep tar)
+	found=0
+	for pid in $pids; do
+		cmdline=$(tr '\0' ' ' </proc/$pid/cmdline)
+		if echo "$cmdline" | grep -q '{{ backup_lvm_snapshot_mount_point }}'; then
+			log err "Process $pid (TAR) is still running in the background, manual intervention required."
+			found=1
+			break
+		fi
+	done
+	if [ "$found" -eq 1 ]; then
+		exit 1
+	else
+		log info "No process found, continuing with backup..."
+	fi
 
-    echo "Checking if snapshot already exists..."
-    if lvdisplay /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} &>/dev/null; then
-        echo "Existing snapshot found. Attempting to unmount (if mounted)..."
-        umount {{ backup_lvm_snapshot_mount_point }} &>/dev/null || echo "Not mounted or unmount failed (may be ok if not mounted)."
+	log info "Checking if snapshot already exists..."
+	if lvdisplay /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} &>/dev/null; then
+		log info "Existing snapshot found. Attempting to unmount (if mounted)..."
+		umount {{ backup_lvm_snapshot_mount_point }} &>/dev/null || log warning "Not mounted or unmount failed (may be ok if not mounted)."
 
-        echo "Removing existing snapshot..."
-        lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} || {
-            echo "Failed to remove existing snapshot. Aborting."
-            exit 1
-        }
-    fi
+		log info "Removing existing snapshot..."
+		lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} || {
+			log err "Failed to remove existing snapshot. Aborting."
+			exit 1
+		}
+	fi
 
-    echo "Creating LVM snapshot for backup..."
-    lvcreate --size {{ backup_lvm_snapshot_size }} --snapshot --name {{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_volume }} || {
-        echo "Snapshot creation failed."
-        exit 1
-    }
-    mkdir -p {{ backup_lvm_snapshot_mount_point }}
-    echo "Mounting LVM snapshot..."
-    mount /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_mount_point }} || {
-        echo "Mount failed."
-        lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
-        exit 1
-    }
-    trap cleanup EXIT
-    echo "Creating archive from LVM snapshot..."
-    ERROR=$($TAR \
-        --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-        -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz -C {{ backup_lvm_snapshot_mount_point }} {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-        2>&1 >/dev/null)
-    {% else %}
-    ERROR=$($TAR \
-        --exclude-from='{{ backup_path }}/backup-exclude.txt' \
-        -cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
-        2>&1 >/dev/null)
-    {% endif %}
-    {% endif %}
+	log info "Creating LVM snapshot for backup..."
+	lvcreate --size {{ backup_lvm_snapshot_size }} --snapshot --name {{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_volume }} || {
+		log err "Snapshot creation failed."
+		exit 1
+	}
+	mkdir -p {{ backup_lvm_snapshot_mount_point }}
+	log info "Mounting LVM snapshot..."
+	mount /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }} {{ backup_lvm_snapshot_mount_point }} || {
+		log err "Mount failed."
+		lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
+		exit 1
+	}
+	trap cleanup EXIT
+	log info "Creating archive from LVM snapshot..."
+	ERROR=$($TAR \
+		--exclude-from='{{ backup_path }}/backup-exclude.txt' \
+		-cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz -C {{ backup_lvm_snapshot_mount_point }} {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+		2>&1 >/dev/null)
+	{% else %}
+	ERROR=$($TAR \
+		--exclude-from='{{ backup_path }}/backup-exclude.txt' \
+		-cpzf {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz {% for directory in backup_directories %}{{ directory }} {% endfor %} \
+		2>&1 >/dev/null)
+	{% endif %}
+	{% endif %}
 
-    BACKUP_RETURN_CODE=$?
-    if [ $BACKUP_RETURN_CODE -ne 0 ]; then
-        echo $ERROR
-        echo "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
+	BACKUP_RETURN_CODE=$?
+	if [ $BACKUP_RETURN_CODE -ne 0 ]; then
+		log err "$ERROR"
+		log warning "Backup failed, this was try number $RETRY_COUNT. Max-Retry threshold is $TRY_MAX"
 
-        # Apply increasing delay before next retry
-        case $RETRY_COUNT in
-        2)
-            echo "Backup failed 30 minutes..."
-            sleep 1800
-            ;;
-        3)
-            echo "Backup failed 90 minutes..."
-            sleep 5400
-            ;;
-        esac
+		# Apply increasing delay before next retry
+		case $RETRY_COUNT in
+		2)
+			log info "Backup failed 30 minutes..."
+			sleep 1800
+			;;
+		3)
+			log info "Backup failed 90 minutes..."
+			sleep 5400
+			;;
+		esac
 
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-    else
-        echo "Backup successful"
-        break
-    fi
+		RETRY_COUNT=$((RETRY_COUNT + 1))
+	else
+		log info "Backup successful"
+		break
+	fi
 done
 
 # Check file size
@@ -140,33 +155,33 @@ ERROR="Backup failed after $RETRY_COUNT tries. Error of the last try: \n\n $ERRO
 
 {% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
 # Uptime-Kuma alerting
-echo "Sending result to Uptime-Kuma"
+log info "Sending result to Uptime-Kuma"
 if [ $BACKUP_RETURN_CODE -eq 0 ]; then
-    $CURL --get \
-        --output /dev/null \
-        --silent \
-        --data-urlencode "status=up" \
-        --data-urlencode "msg=OK" \
-        --data-urlencode "ping=" \
-        {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
+	$CURL --get \
+		--output /dev/null \
+		--silent \
+		--data-urlencode "status=up" \
+		--data-urlencode "msg=OK" \
+		--data-urlencode "ping=" \
+		{{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 else
-    $CURL --get \
-        --output /dev/null \
-        --silent \
-        --data-urlencode "status=down" \
-        --data-urlencode "msg=Failed with error: $ERROR" \
-        --data-urlencode "ping=" \
-        {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
+	$CURL --get \
+		--output /dev/null \
+		--silent \
+		--data-urlencode "status=down" \
+		--data-urlencode "msg=Failed with error: $ERROR" \
+		--data-urlencode "ping=" \
+		{{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 fi
 
 if [ $FILESIZE -lt {{ backup_uptimekuma_min_file_size }} ]; then
-    $CURL --get \
-        --output /dev/null \
-        --silent \
-        --data-urlencode "status=up" \
-        --data-urlencode "msg=File size OK" \
-        --data-urlencode "ping=" \
-        {{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
+	$CURL --get \
+		--output /dev/null \
+		--silent \
+		--data-urlencode "status=up" \
+		--data-urlencode "msg=File size OK" \
+		--data-urlencode "ping=" \
+		{{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
 fi
 {% else %}
 # Uptime-Kuma alerting disabled
@@ -174,47 +189,47 @@ fi
 
 {% if backup_healthchecks_push_id is defined and backup_healthchecks_push_id and backup_healthchecks_push_id!="" %}
 # Healthchecks alerting
-echo "Sending result to Healthchecks"
+log info "Sending result to Healthchecks"
 if [ $BACKUP_RETURN_CODE -ne 0 ]; then
-    $CURL \
-        --output /dev/null \
-        --silent \
-        --retry 5 \
-        --max-time 10 \
-        --fail \
-        --show-error \
-        --data-raw "$ERROR" \
-        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/$BACKUP_RETURN_CODE
+	$CURL \
+		--output /dev/null \
+		--silent \
+		--retry 5 \
+		--max-time 10 \
+		--fail \
+		--show-error \
+		--data-raw "$ERROR" \
+		{{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/$BACKUP_RETURN_CODE
 elif [ $FILESIZE -lt {{ backup_healthchecks_min_file_size }} ]; then
-    $CURL \
-        --output /dev/null \
-        --silent \
-        --retry 5 \
-        --max-time 10 \
-        --fail \
-        --show-error \
-        --data-raw "File size too smll ($FILESIZE), should be larger than {{ backup_healthchecks_min_file_size }}" \
-        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
+	$CURL \
+		--output /dev/null \
+		--silent \
+		--retry 5 \
+		--max-time 10 \
+		--fail \
+		--show-error \
+		--data-raw "File size too smll ($FILESIZE), should be larger than {{ backup_healthchecks_min_file_size }}" \
+		{{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
 elif [ $FILESIZE -gt {{ backup_healthchecks_max_file_size }} ]; then
-    $CURL \
-        --output /dev/null \
-        --silent \
-        --retry 5 \
-        --max-time 10 \
-        --fail \
-        --show-error \
-        --data-raw "File size too large ($FILESIZE), it should be smaller than {{ backup_healthchecks_max_file_size }}" \
-        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
+	$CURL \
+		--output /dev/null \
+		--silent \
+		--retry 5 \
+		--max-time 10 \
+		--fail \
+		--show-error \
+		--data-raw "File size too large ($FILESIZE), it should be smaller than {{ backup_healthchecks_max_file_size }}" \
+		{{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
 else
-    $CURL \
-        --output /dev/null \
-        --silent \
-        --retry 5 \
-        --max-time 10 \
-        --fail \
-        --show-error \
-        --data-raw "OK: File size $FILESIZE was between {{ backup_healthchecks_min_file_size }} and {{ backup_healthchecks_max_file_size }}" \
-        {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}
+	$CURL \
+		--output /dev/null \
+		--silent \
+		--retry 5 \
+		--max-time 10 \
+		--fail \
+		--show-error \
+		--data-raw "OK: File size $FILESIZE was between {{ backup_healthchecks_min_file_size }} and {{ backup_healthchecks_max_file_size }}" \
+		{{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}
 fi
 
 {% else %}
