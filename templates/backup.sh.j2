@@ -2,6 +2,7 @@
 #
 # {{ ansible_managed }}
 #
+set -o pipefail
 
 TAR=/usr/bin/tar
 RM=/usr/bin/rm
@@ -47,6 +48,17 @@ cleanup() {
 		lvremove -fy /dev/ubuntu-vg/{{ backup_lvm_snapshot_name }}
 	fi
 }
+
+{% if backup_healthchecks_push_id is defined and backup_healthchecks_push_id and backup_healthchecks_push_id!="" %}
+# Healthchecks start ping
+log info "Sending start ping to Healthchecks"
+$CURL \
+	--output /dev/null \
+	--silent \
+	--retry 5 \
+	--max-time 10 \
+	{{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/start
+{% endif %}
 
 # Backup
 while [ $RETRY_COUNT -le $TRY_MAX ]; do
@@ -127,11 +139,11 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
 		# Apply increasing delay before next retry
 		case $RETRY_COUNT in
 		2)
-			log info "Backup failed 30 minutes..."
+			log info "Backup failed, waiting 30 minutes before retry..."
 			sleep 1800
 			;;
 		3)
-			log info "Backup failed 90 minutes..."
+			log info "Backup failed, waiting 90 minutes before retry..."
 			sleep 5400
 			;;
 		esac
@@ -144,48 +156,16 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
 done
 
 # Check file size
+if [ $BACKUP_RETURN_CODE -eq 0 ]; then
 {% if backup_archiver=="zip" -%}
-FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip)
+	FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.zip)
 {% else -%}
-FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz)
+	FILESIZE=$(stat --printf="%s" {{ backup_target_path }}/{{ backup_identifier }}/backup-{{ backup_identifier }}.tar.gz)
 {% endif %}
+fi
 
 # customize error message
 ERROR="Backup failed after $RETRY_COUNT tries. Error of the last try: \n\n $ERROR"
-
-{% if backup_uptimekuma_push_id is defined and backup_uptimekuma_push_id and backup_uptimekuma_push_id!="" %}
-# Uptime-Kuma alerting
-log info "Sending result to Uptime-Kuma"
-if [ $BACKUP_RETURN_CODE -eq 0 ]; then
-	$CURL --get \
-		--output /dev/null \
-		--silent \
-		--data-urlencode "status=up" \
-		--data-urlencode "msg=OK" \
-		--data-urlencode "ping=" \
-		{{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
-else
-	$CURL --get \
-		--output /dev/null \
-		--silent \
-		--data-urlencode "status=down" \
-		--data-urlencode "msg=Failed with error: $ERROR" \
-		--data-urlencode "ping=" \
-		{{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
-fi
-
-if [ $FILESIZE -lt {{ backup_uptimekuma_min_file_size }} ]; then
-	$CURL --get \
-		--output /dev/null \
-		--silent \
-		--data-urlencode "status=up" \
-		--data-urlencode "msg=File size OK" \
-		--data-urlencode "ping=" \
-		{{ backup_uptimekuma_protocol }}://{{ backup_uptimekuma_host }}:{{ backup_uptimekuma_port }}/api/push/{{ backup_uptimekuma_push_id }}
-fi
-{% else %}
-# Uptime-Kuma alerting disabled
-{% endif %}
 
 {% if backup_healthchecks_push_id is defined and backup_healthchecks_push_id and backup_healthchecks_push_id!="" %}
 # Healthchecks alerting
@@ -208,7 +188,7 @@ elif [ $FILESIZE -lt {{ backup_healthchecks_min_file_size }} ]; then
 		--max-time 10 \
 		--fail \
 		--show-error \
-		--data-raw "File size too smll ($FILESIZE), should be larger than {{ backup_healthchecks_min_file_size }}" \
+		--data-raw "File size too small ($FILESIZE), should be larger than {{ backup_healthchecks_min_file_size }}" \
 		{{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_healthchecks_push_id }}/fail
 elif [ $FILESIZE -gt {{ backup_healthchecks_max_file_size }} ]; then
 	$CURL \
@@ -235,3 +215,5 @@ fi
 {% else %}
 # Healthchecks alerting disabled
 {% endif %}
+
+exit $BACKUP_RETURN_CODE
