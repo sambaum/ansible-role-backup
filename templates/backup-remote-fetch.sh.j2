@@ -50,7 +50,7 @@ elif [ $FILESIZE -lt {{ backup_remote_fetch_backup_healthchecks_min_file_size }}
         --max-time 10 \
         --fail \
         --show-error \
-        --data-raw "File size too smll ($FILESIZE), should be larger than {{ backup_remote_fetch_backup_healthchecks_min_file_size }}" \
+        --data-raw "File size too small ($FILESIZE), should be larger than {{ backup_remote_fetch_backup_healthchecks_min_file_size }}" \
         {{ backup_healthchecks_protocol }}://{{ backup_healthchecks_host }}:{{ backup_healthchecks_port }}/ping/{{ backup_remote_fetch_backup_healthchecks_push_id }}/fail
 elif [ $FILESIZE -gt {{ backup_remote_fetch_backup_healthchecks_max_file_size }} ]; then
     $CURL \
