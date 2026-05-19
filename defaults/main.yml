@@ -61,7 +61,7 @@ backup_remote_fetch_backup_minute: "00"
 backup_remote_fetch_backup_day: "*"
 
 # LVM Snapshot
-backup_lvm_snapshot: "false"
+backup_lvm_snapshot: false
 backup_lvm_snapshot_volume: /dev/ubuntu-vg/ubuntu-lv
 backup_lvm_snapshot_name: backup-snapshot
 backup_lvm_snapshot_size: 4G

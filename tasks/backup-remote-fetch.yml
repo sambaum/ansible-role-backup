@@ -1,13 +1,13 @@
 - name: Copy backup script to server.
-  template:
+  ansible.builtin.template:
     src: backup-remote-fetch.sh.j2
     dest: "{{ backup_path }}/backup-remote-fetch.sh"
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 0744
+    mode: "0744"
 
 - name: Configure backup remote fetch cron job.
-  cron:
+  ansible.builtin.cron:
     name: "Backup remote fetch cron job"
     minute: "{{ backup_remote_fetch_backup_minute }}"
     hour: "{{ backup_remote_fetch_backup_hour }}"

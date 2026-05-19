@@ -1,29 +1,29 @@
 - name: Ensure backup folder exists.
-  file:
+  ansible.builtin.file:
     path: "{{ backup_path }}"
     state: directory
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 775
+    mode: "0775"
 
 - name: Copy backup script to server.
-  template:
+  ansible.builtin.template:
     src: backup.sh.j2
     dest: "{{ backup_path }}/backup.sh"
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 744
+    mode: "0744"
 
 - name: Copy excludes file to server.
-  template:
+  ansible.builtin.template:
     src: backup-exclude.txt.j2
     dest: "{{ backup_path }}/backup-exclude.txt"
     owner: "{{ backup_user }}"
     group: "{{ backup_user }}"
-    mode: 644
+    mode: "0644"
 
 - name: Configure backup cron job.
-  cron:
+  ansible.builtin.cron:
     name: "Backup cron job"
     minute: "{{ inventory_hostname | hash('sha1') | int(base=16) % 60 }}"
     hour: "{{ 3 + (inventory_hostname | hash('sha1') | int(base=16) % 3) }}"

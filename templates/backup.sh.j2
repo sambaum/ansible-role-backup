@@ -74,7 +74,7 @@ while [ $RETRY_COUNT -le $TRY_MAX ]; do
 		2>&1 >/dev/null)
 	#Backup with TAR
 	{% else %}
-	{% if backup_lvm_snapshot=="true" %}
+	{% if backup_lvm_snapshot %}
 
 	log info "Looking for tar processes with snapshot path in their command line..."
 	pids=$(pgrep tar)
