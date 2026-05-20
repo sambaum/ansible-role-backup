@@ -7,8 +7,6 @@ MKDIR=/usr/bin/mkdir
 CURL=/usr/bin/curl
 SCP=/usr/bin/scp
 
-{% if backup_remote_fetch %}
-
 {% for backup_remote_fetch_target in backup_remote_fetch_targets %}
 
 echo
@@ -75,6 +73,3 @@ else
 fi
 
 {% endfor %}
-
-{% endif %}
-
